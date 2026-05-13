@@ -1,0 +1,184 @@
+
+# 程序思路
+// ****创建一个SparkSession并将其初始化****
+// Creates a SparkSession.
+// 采用.setMaster("local[*]")方法指定maser的url为本地，local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算，
+// local[3]表示采用3线程计算；采用.setAppName("sparkSQL_NBA_demo")方法将其命名为"sparkSQL_NBA_demo"
+val conf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL_NBA_demo")
+// 通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它
+val spark = SparkSession
+.builder
+.appName(s"${this.getClass.getSimpleName}")
+.config(conf)
+.getOrCreate()
+// 使用变量 sc来表示SparkContext
+val sc = spark.sparkContext
+// ****采用Hadoop计算资源实现实验****
+// DATA_PATH表示1980-2016年NBA球员各项数据的文件路径
+// TMP_PATH表示缓存数据的路径，该路径下为空
+val DATA_PATH = "hdfs://localhost:8020/home/student/data"
+val TMP_PATH = "hdfs://localhost:8020/home/data"
+val RESULT_PATH = "hdfs://localhost:8020/home/data/save"
+//****注册临时表schemaN****
+//create schema for the data frame
+val schemaN = StructType(
+// 表结构包括40个数据类型为StructField的数据，具体如下：
+// 名称为name，数据类型为StringType，且可为空的StructField
+StructField("name", StringType, true) ::
+// 名称为year，数据类型为IntegerType，且可为空的StructField
+StructField("year", IntegerType, true) ::
+// 名称为age，数据类型为IntegerType，且可为空的StructField
+StructField("age", IntegerType, true) ::
+// 名称为3P"，数据类型为DoubleType，且可为空的StructField
+StructField("3P", DoubleType, true) ::
+// 名称为z3P，数据类型为DoubleType，且可为空的StructField
+StructField("z3P", DoubleType, true) ::
+// 名称为zTOT，数据类型为DoubleType，且可为空的StructField
+StructField("zTOT", DoubleType, true) ::
+// 名称为n3P，数据类型为DoubleType，且可为空的StructField
+StructField("n3P", DoubleType, true) ::
+// 名称为nTOT，数据类型为DoubleType，且可为空的StructField
+StructField("nTOT", DoubleType, true) :: Nil)
+//接收z-score计算结果
+val score_demo = new Z_Score_demo
+val nStats = score_demo.z_score(sc,DATA_PATH,TMP_PATH,RESULT_PATH)
+// 定义变量nPlayer， 为x.name, x.year, x.age, x.stats(3), x.statsZ(3), Array(x.valueZ)
+// , x.statsN(3), Array(x.valueN)的映射表中的每一行，也就是每个球员的信息
+val nPlayer = nStats.map(x => Row.fromSeq(Array(x.name, x.year, x.age) ++
+Array(x.stats(3)) ++ Array(x.statsZ(2)) ++ Array(x.valueZ) ++ Array(x.statsN(3)) ++ Array(x.valueN)))
+// 定义变量dfPlayersT，表示创建的关系数据库，也就是说球员信息nPlayer与注册临时表schemaN之间的对应关系
+val dfPlayersT = spark.sqlContext.createDataFrame(nPlayer, schemaN)
+// dfPlayersT表示nPlayer与schemaN之间的字段名映射，表名为tPlayers
+dfPlayersT.registerTempTable("tPlayers")
+// 定义变量dfPlayers，表示根据年龄排序的数据表内容
+val dfPlayers = spark.sqlContext.sql("select age-min_age as exp,tPlayers.* from tPlayers join " +
+"(select name,min(age)as min_age from tPlayers group by name) as t1 on tPlayers.name=t1.name order by tPlayers.name, exp ")
+// dfPlayers表示字段与内容之间的映射关系，表名为Players
+dfPlayers.registerTempTable("Players")
+//分析自1980年以来每个年龄段参赛次数，groupBy("age").count表示通过groupBy函数以age的频数进行分组，
+// sort("age")表示将各组以age进行排序，show(100)表示展示前100行
+dfPlayers.groupBy("age").count.sort("age").show(100)
+//查看2016年z-score排名，take(10)表示选择前10个球员并显示
+spark.sql("Select name, zTot from Players where year=2016 order by zTot desc").take(10).foreach(println)
+//查看2016年正则化z-score排名，take(10)表示选择前10个球员并显示
+spark.sql("Select name, nTot from Players where year=2016 order by nTot desc").take(10).foreach(println)
+//查看Curry所有数据，collect表示选择所有符合条件的球员并显示
+spark.sql("Select * from Players where year=2016 and name='Stephen Curry'").collect.foreach(println)
+//查看Curry三分球得分排名，take(10)表示选择前10个球员并显示
+spark.sql("select name, 3p, z3p from Players where year=2016 order by z3p desc").take(10).foreach(println)
+
+# 程序开发
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.3.3</version>
+<scope>provided</scope>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-mllib_2.11</artifactId>
+<version>2.3.3</version>
+<scope>compile</scope>
+</dependency>
+<dependency>
+<groupId>org.scala-lang</groupId>
+<artifactId>scala-library</artifactId>
+<version>2.11.8</version>
+</dependency>
+</dependencies>
+package com
+​
+import org.apache.log4j.{Level, Logger}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+​
+object sparkSQL_NBA_Demo{
+​
+//屏蔽日志信息
+Logger.getLogger("org").setLevel(Level.ERROR)
+​
+def main(args: Array[String]) {
+​
+// 配置Spark环境
+val conf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL_NBA_demo")
+val spark = SparkSession
+.builder
+.appName(s"${this.getClass.getSimpleName}")
+.config(conf)
+.getOrCreate()
+val sc = spark.sparkContext
+​
+// 数据路径配置
+val DATA_PATH = "hdfs://localhost:8020/home/student/data"
+val TMP_PATH = "hdfs://localhost:8020/home/data"
+val RESULT_PATH = "hdfs://localhost:8020/home/data/save"
+​
+// 定义表结构
+val schemaN = StructType(
+StructField("name", StringType, true) ::
+StructField("year", IntegerType, true) ::
+StructField("age", IntegerType, true) ::
+StructField("3P", DoubleType, true) ::
+StructField("z3P", DoubleType, true) ::
+StructField("zTOT", DoubleType, true) ::
+StructField("n3P", DoubleType, true) ::
+StructField("nTOT", DoubleType, true) :: Nil)
+​
+// 计算Z-score
+val score_demo = new Z_Score_demo
+val nStats = score_demo.z_score(sc,DATA_PATH,TMP_PATH,RESULT_PATH)
+​
+// 构建DataFrame并注册临时表
+val nPlayer = nStats.map(x => Row.fromSeq(Array(x.name, x.year, x.age) ++
+Array(x.stats(3)) ++ Array(x.statsZ(2)) ++ Array(x.valueZ) ++ Array(x.statsN(3)) ++ Array(x.valueN)))
+val dfPlayersT = spark.sqlContext.createDataFrame(nPlayer, schemaN)
+dfPlayersT.registerTempTable("tPlayers")
+​
+// 处理球员年龄数据并注册临时表
+val dfPlayers = spark.sqlContext.sql("select age-min_age as exp,tPlayers.* from tPlayers join " +
+"(select name,min(age)as min_age from tPlayers group by name) as t1 on tPlayers.name=t1.name order by tPlayers.name, exp ")
+dfPlayers.registerTempTable("Players")
+​
+// 数据分析与输出
+println("===分析自1980年以来每个年龄段参赛次数===")
+dfPlayers.groupBy("age").count.sort("age").show(100)
+​
+println("===查看2016年z-score排名，take(10)表示选择前10个球员并显示===")
+spark.sql("Select name, zTot from Players where year=2016 order by zTot desc").take(10).foreach(println)
+​
+// 保存2016年z-score排名至CSV
+val result: DataFrame = spark.sql("Select name, zTot from Players where year=2016 order by zTot desc")
+result.coalesce(1).write.format("csv").save(s"${RESULT_PATH}")
+​
+println("===查看Curry所有数据===")
+spark.sql("Select * from Players where year=2016 and name='Stephen Curry'").collect.foreach(println)
+​
+println("===查看Curry三分球得分排名===")
+spark.sql("select name, 3p, z3p from Players where year=2016 order by z3p desc").take(10).foreach(println)
+}
+}
+
+# 服务器端运行
+ssh-copy-id master
+start-all.sh
+cd /home/spark-2.3.2-bin-hadoop2.6/
+./sbin/start-all.sh
+hadoop fs -mkdir -p /home/student/
+hadoop fs -put /home/student/data /home/student/
+cd /home/spark-2.3.2-bin-hadoop2.6
+./bin/spark-submit --master local[*] --class com.sparkSQL_NBA_Demo /home/spark-2.3.2-bin-hadoop2.6/sparkSQL_NBA_Demo-1.0-SNAPSHOT.jar
+hadoop fs -ls /home/data/save
+此时观察到路径/home/data/save下已经生成csv文件
+hadoop fs -cat /home/data/save/part-00000-17cb0d97-d881-4da0-bada-196d491ba7d7-c000.csv

@@ -1,0 +1,142 @@
+
+# 开发过程
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.3.3</version>
+<scope>provided</scope>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-mllib_2.11</artifactId>
+<version>2.3.3</version>
+<scope>compile</scope>
+</dependency>
+<dependency>
+<groupId>org.scala-lang</groupId>
+<artifactId>scala-library</artifactId>
+<version>2.10.3</version>
+</dependency>
+</dependencies>
+
+# 创建程序文件
+package com
+​
+import org.apache.log4j.{Level, Logger}
+import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.mllib.regression.LinearRegressionWithSGD
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.linalg.Vectors
+​
+object LinearRegression {
+def main(args:Array[String]): Unit ={
+// … …
+//在此处继续添加后续代码
+// … …
+}
+}
+Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
+Logger.getLogger("org.eclipse.jetty.server").setLevel(Level.OFF)
+// 调用setAppName方法，将SparkConf命名为LinearRegression；
+// 采用.setMaster("local[*]")方法中指定local表示采用本地模式
+// local[*]表示采用多少个线程用于计算，local[*]: 表示利用cpu可以支持的最多的线程数
+// local 表示单线程，local[3]表示采用3线程计算
+val conf = new SparkConf().setAppName("LinearRegression").setMaster("local[*]")
+// 使用变量 sc来表示SparkContext
+val sc = new SparkContext(conf)
+// 用于加载数据，代码如下：
+// 提取输入参数为args(0)的数据到变量data，用于数据预处理
+val data = sc.textFile(args(0))
+// 采用map方法，通过split(',')方法将data中的数据以以','分割并建立标签-数据的键值对
+val parsedData = data.map { line =>
+val parts = line.split(',')
+LabeledPoint(parts(0).toDouble, Vectors.dense(parts(1).split(' ').map(_.toDouble)))
+}
+// 建立线性回归模型并训练
+// 指定迭代次数为100
+val numIterations = 100
+// 依据输入的数据与标签数据、迭代次数，采用随机梯度下降的方法建立并训练线性回归模型
+val model = LinearRegressionWithSGD.train(parsedData, numIterations)
+// 计算均方差，用以评估训练样本模型并计算训练误差
+val valuesAndPreds = parsedData.map { point =>
+// 提取数据的预测标签
+val prediction = model.predict(point.features)
+(point.label, prediction)
+}
+// 计算均方差预测标签与实际标签的均方差
+val MSE=valuesAndPreds.map{case(v,p)=>math.pow((v-p),2)}.reduce(_+_)/valuesAndPreds.count
+println("training Mean Squared Error = " + MSE)
+sc.stop()
+package com
+​
+import org.apache.log4j.{Level, Logger}
+import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.mllib.regression.LinearRegressionWithSGD
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.linalg.Vectors
+​
+object LinearRegression {
+def main(args: Array[String]): Unit ={
+// 屏蔽不必要的日志显示终端上
+Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
+Logger.getLogger("org.eclipse.jetty.server").setLevel(Level.OFF)
+​
+// 设置运行环境
+val conf = new SparkConf().setAppName("LinearRegression").setMaster("local[*]")
+val sc = new SparkContext(conf)
+​
+// 加载数据
+val data = sc.textFile(args(0))
+val parsedData = data.map { line =>
+// 按照分隔符split解析数据，将数据分行两个元素
+val parts = line.split(',')
+// 以两个元素为分类中可视为负样本，建一个标签为的稀疏向量标注点
+LabeledPoint(parts(0).toDouble, Vectors.dense(parts(1).split(' ').map(_.toDouble)))
+}
+// 设置迭代次数
+val numIterations = 100
+​
+// 建立线性回归模型并训练
+val model = LinearRegressionWithSGD.train(parsedData, numIterations)
+​
+// 源数据格式化
+val valuesAndPreds = parsedData.map { point =>
+// 使用模型预测数据
+val prediction = model.predict(point.features)
+(point.label, prediction)
+}
+// 计算均方差
+val MSE=valuesAndPreds.map{case(v,p)=>math.pow((v-p),2)}.reduce(_+_)/valuesAndPreds.count
+// 打印预测数据
+println("training Mean Squared Error = " + MSE)
+​
+sc.stop()
+}
+}
+
+# 实验环境准备工作
+cd $HADOOP_HOME/
+sbin/start-all.sh
+
+# 上传至服务器端运行
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib
+hdfs dfs -put lpsa.data hdfs://master:8020/
+
+# 在服务器执行以下命令运行程序
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+bin/spark-submit \
+--master local[*] \
+--class com.LinearRegression \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkDemo-1.0-SNAPSHOT.jar \
+hdfs://master:8020/lpsa.data

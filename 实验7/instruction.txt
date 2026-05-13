@@ -1,0 +1,178 @@
+
+# 实验过程
+商品ID-20::4::7.372579::-1::0
+商品ID-132::1::7.238897::0::2
+商品ID-78::4::7.2234173::0::0
+
+# 使用IDEA新建一个Maven项目：sparkCcDemo
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-mllib_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.kafka</groupId>
+<artifactId>kafka_2.12</artifactId>
+<version>2.2.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.kafka</groupId>
+<artifactId>kafka-clients</artifactId>
+<version>2.2.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming-kafka_2.11</artifactId>
+<version>1.6.3</version>
+</dependency>
+<dependency>
+<groupId>com.alibaba</groupId>
+<artifactId>fastjson</artifactId>
+<version>1.2.34</version>
+</dependency>
+</dependencies>
+​
+<properties>
+<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+<maven.compiler.encoding>UTF-8</maven.compiler.encoding>
+<java.version>1.8</java.version>
+<maven.compiler.source>1.8</maven.compiler.source>
+<maven.compiler.target>1.8</maven.compiler.target>
+</properties>
+
+# 代码思路
+//AppName 自然就是当前Job的名字，Master就是Spark的主机地址，这里采用的是本地模式
+SparkConf sparkConf = new SparkConf().setAppName("StreamingGoods").setMaster("local[3]");
+// 新建JavaStreamingContext对象，new Duration(5000) 窗口时间，单位毫秒
+JavaStreamingContext jsc = new JavaStreamingContext(sparkConf, new Duration(5000));
+//把数据保存到对应的路径下
+jsc.checkpoint(checkpointDir);
+//获取模拟数据，设置服务端地址和端口号
+JavaReceiverInputDStream<String> jds = jsc.socketTextStream("127.0.0.1", 9999);
+//定义字符串，保存数据
+JavaDStream<String> mess = jds.map(str -> str);
+mess.print();
+//mapToPair就是将rdd转换为键值对rdd,与map不同的是添加了一个key
+JavaPairDStream<String, Double> splitMess = jds.mapToPair(line -> {
+String[] lineSplit = line.split("::");
+Double followValue = Double.parseDouble(lineSplit[1]) * 0.8 + Double.parseDouble(lineSplit[2]) * 0.6 + Double.parseDouble(lineSplit[3]) * 1 + Double.parseDouble(lineSplit[4]) * 1;
+return new Tuple2<>(lineSplit[0], followValue);
+});
+//使用updateStateByKey来进行操作。在这里是通过updateStateByKey来以Batch Interval为单位来对历史状态进行更新，
+JavaPairDStream<String, Double> UpdateFollowValue = splitMess.updateStateByKey((newValues, statValue) -> {
+Double updateValue = statValue.or(0.0);
+//循环遍历，更新value值
+for (Double value : newValues) {
+updateValue += value;
+}
+//返回更新的值
+return Optional.of(updateValue);
+});
+// 我们需要将其转化为的形式，然后再按照sortByKey来进行排序，然后进行输出
+UpdateFollowValue.foreachRDD(followValue -> {
+JavaPairRDD<Double, String> followValueSort = followValue.mapToPair(valueToKey -> new Tuple2<>(valueToKey._2, valueToKey._1)).sortByKey(false);
+List<Tuple2<String, Double>> list = followValueSort.mapToPair(arg0 -> new Tuple2<>(arg0._2, arg0._1)).take(10);
+//遍历商品关注度，打印输出
+for (Tuple2<String, Double> tu : list) {
+System.out.println("商品ID: " + tu._1 + " 关注度: " + tu._2);
+}
+});
+
+# 编写代码
+package com;
+​
+import org.apache.spark.HashPartitioner;
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.Optional;
+import org.apache.spark.streaming.Duration;
+import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaPairDStream;
+import org.apache.spark.streaming.api.java.JavaReceiverInputDStream;
+import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import scala.Tuple2;
+import java.io.Serializable;
+import java.util.List;
+​
+public class StreamingGoodsAnalysis implements Serializable {
+private static final long serialVersionUID = 1L;
+//定义一个文件夹，用于保存上一个RDD的数据
+private static String checkpointDir = "checkDir";
+​
+public static void main(String[] args) throws Exception{
+//AppName 自然就是当前Job的名字，Master就是Spark的主机地址，这里采用的是本地模式
+SparkConf sparkConf = new SparkConf().setAppName("StreamingGoods").setMaster("local[3]");
+// 新建JavaStreamingContext对象，new Duration(5000) 窗口时间，单位毫秒
+JavaStreamingContext jsc = new JavaStreamingContext(sparkConf, new Duration(5000));
+//存放数据
+jsc.checkpoint(checkpointDir);
+​
+//获取模拟数据，设置服务端地址和端口号
+JavaReceiverInputDStream<String> jds = jsc.socketTextStream("127.0.0.1", 9999);
+JavaDStream<String> mess = jds.map(str -> str);
+mess.print();
+​
+//mapToPair就是将rdd转换为键值对rdd,与map不同的是添加了一个key
+JavaPairDStream<String, Double> splitMess = jds.mapToPair(line -> {
+//定义字符串数组
+String[] lineSplit = line.split("::");
+Double followValue = Double.parseDouble(lineSplit[1]) * 0.8 + Double.parseDouble(lineSplit[2]) * 0.6 + Double.parseDouble(lineSplit[3]) * 1 + Double.parseDouble(lineSplit[4]) * 1;
+//返回数据
+return new Tuple2<>(lineSplit[0], followValue);
+});
+​
+//使用updateStateByKey来进行操作。在这里是通过updateStateByKey来以Batch Interval为单位来对历史状态进行更新，
+JavaPairDStream<String, Double> UpdateFollowValue = splitMess.updateStateByKey((newValues, statValue) -> {
+Double updateValue = statValue.or(0.0);
+//循环遍历，更新value值
+for (Double value : newValues) {
+updateValue += value;
+}
+//返回更新的值
+return Optional.of(updateValue);
+}, new HashPartitioner(jsc.sparkContext().defaultParallelism()));
+​
+//实现思想，由于原RDD UpdateFollowValue的值可以知道是的形式，我们使用sortByKey是不能这样进行排序的，因为它并不是按照关注度排序。
+// 我们需要将其转化为的形式，然后再按照sortByKey来进行排序，然后进行输出
+UpdateFollowValue.foreachRDD(followValue -> {
+JavaPairRDD<Double, String> followValueSort = followValue.mapToPair(valueToKey ->
+new Tuple2<>(valueToKey._2, valueToKey._1)).sortByKey(false);
+//定义list数组存放数据
+List<Tuple2<String, Double>> list = followValueSort.mapToPair(arg0 ->
+new Tuple2<>(arg0._2, arg0._1)).take(10);
+//遍历商品关注度，打印输出
+for (Tuple2<String, Double> tu : list) {
+System.out.println("商品ID: " + tu._1 + " 关注度: " + tu._2);
+}
+});
+​
+//启动JavaStreamingContext对象，执行计算
+jsc.start();
+jsc.awaitTermination();
+}
+}
+
+# 实验环境下程序启动
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+java -cp SimulatorSocketLog-1.0-SNAPSHOT.jar com.SimulatorSocket
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/bin/spark-submit \
+--master local[2] \
+--class com.StreamingGoodsAnalysis \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkCcDemo-1.0-SNAPSHOT.jar

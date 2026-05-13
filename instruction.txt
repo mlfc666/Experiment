@@ -1,0 +1,317 @@
+
+============================================================
+实验4
+============================================================
+
+# Spark SQL 编程基础
+cd /tmp
+
+# 实验简介
+vi Subject.json
+
+# 实验目的
+{"class":"java","type":"base","hour":20} {"class":"mysql","type":"base","hour":30} {"class":"python","type":"base","hour":25} {"class":"datawhare","type":"base","hour":20} {"class":"hadoop","type":"training","hour":68} {"class":"hive","type":"training","hour":38} {"class":"hbase","type":"training","hour":15} {"class":"spark","type":"training","hour":60}
+
+# 实验内容
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0 bin/spark-shell
+
+# 实验知识点
+import org.apache.spark.sql.SparkSession val spark = SparkSession.builder().appName("Spark SQL App").getOrCreate() // 引入包便于把 RDD 隐式转换为 DataFrame import spark.implicits._
+
+# 实验环境
+//读取外部数据源创建 DataFrame 对象 val df = spark.read.json("/tmp/Subject.json")
+
+# 实验过程
+df.show() //其中，Count:记录条数，Mean:平均值，Stddev:样本标准差，Min:最小值，Max:最大值 df.describe("hour").show()
+
+# 准备工作
+df.collect() df.collectAsList()
+
+# SparkSession与SparkContext
+df.printSchema()
+
+# DataFrame对象
+df.where("type = 'training' or hour &gt; 20").show()
+
+# Spark DataFrame 对象基本操作
+df.select("class","type").show()
+
+# Spark DataFrame 中使用SQL语句
+df.filter(df("type").equalTo("training")).select("class", "type").show()
+
+============================================================
+实验5
+============================================================
+
+# SparkSQL 应用：NBA球员的统计分析
+// ****创建一个SparkSession并将其初始化****// Creates a SparkSession. &nbsp; // 采用.setMaster("local[*]")方法指定maser的url为本地，local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算， &nbsp; // local[3]表示采用3线程计算；采用.setAppName("sparkSQL_NBA_demo")方法将其命名为"sparkSQL_NBA_demo" &nbsp; val conf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL_NBA_demo") &nbsp; // 通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它 &nbsp; val spark = SparkSession &nbsp; &nbsp; .builder &nbsp; &nbsp; .appName(s"${this.getClass.getSimpleName}") &nbsp; &nbsp; .config(conf) &nbsp; &nbsp; .getOrCreate() &nbsp; // 使用变量 sc来表示SparkContext &nbsp; val sc = spark.sparkContext
+
+# 实验简介
+// ****采用Hadoop计算资源实现实验****// DATA_PATH表示1980-2016年NBA球员各项数据的文件路径// TMP_PATH表示缓存数据的路径，该路径下为空 &nbsp; &nbsp;val DATA_PATH = "hdfs://localhost:8020/home/student/data" &nbsp; &nbsp;val TMP_PATH = "hdfs://localhost:8020/home/data" &nbsp; &nbsp;val RESULT_PATH = "hdfs://localhost:8020/home/data/save"
+
+# 实验目的
+//****注册临时表schemaN****//create schema for the data frame &nbsp; &nbsp;val schemaN = StructType( &nbsp;// 表结构包括40个数据类型为StructField的数据，具体如下： &nbsp;// 名称为name，数据类型为StringType，且可为空的StructField &nbsp; &nbsp;StructField("name", StringType, true) :: &nbsp; &nbsp;// 名称为year，数据类型为IntegerType，且可为空的StructField &nbsp; &nbsp;StructField("year", IntegerType, true) :: &nbsp; &nbsp;// 名称为age，数据类型为IntegerType，且可为空的StructField &nbsp; &nbsp;StructField("age", IntegerType, true) :: &nbsp; &nbsp;// 名称为3P"，数据类型为DoubleType，且可为空的StructField &nbsp; &nbsp;StructField("3P", DoubleType, true) :: &nbsp; &nbsp;// 名称为z3P，数据类型为DoubleType，且可为空的StructField &nbsp; &nbsp;StructField("z3P", DoubleType, true) :: &nbsp; &nbsp;// 名称为zTOT，数据类型为DoubleType，且可为空的StructField &nbsp; &nbsp;StructField("zTOT", DoubleType, true) :: &nbsp; &nbsp;// 名称为n3P，数据类型为DoubleType，且可为空的StructField &nbsp; &nbsp;StructField("n3P", DoubleType, true) :: &nbsp; &nbsp;// 名称为nTOT，数据类型为DoubleType，且可为空的StructField &nbsp; &nbsp;StructField("nTOT", DoubleType, true) :: Nil)
+
+# 实验内容
+//接收z-score计算结果val score_demo = new Z_Score_demoval nStats = score_demo.z_score(sc,DATA_PATH,TMP_PATH,RESULT_PATH)// 定义变量nPlayer， 为x.name, x.year, x.age, x.stats(3), x.statsZ(3), Array(x.valueZ)// , x.statsN(3), Array(x.valueN)的映射表中的每一行，也就是每个球员的信息val nPlayer = nStats.map(x =&gt; Row.fromSeq(Array(x.name, x.year, x.age) ++ &nbsp;Array(x.stats(3)) ++ Array(x.statsZ(2)) ++ Array(x.valueZ) ++ Array(x.statsN(3)) ++ Array(x.valueN))) &nbsp; // 定义变量dfPlayersT，表示创建的关系数据库，也就是说球员信息nPlayer与注册临时表schemaN之间的对应关系 &nbsp; val dfPlayersT = spark.sqlContext.createDataFrame(nPlayer, schemaN) &nbsp; // dfPlayersT表示nPlayer与schemaN之间的字段名映射，表名为tPlayers &nbsp; dfPlayersT.registerTempTable("tPlayers") &nbsp; // 定义变量dfPlayers，表示根据年龄排序的数据表内容 &nbsp; &nbsp;val dfPlayers = spark.sqlContext.sql("select age-min_age as exp,tPlayers.* from tPlayers join " + &nbsp; &nbsp; &nbsp;"(select name,min(age)as min_age from tPlayers group by name) as t1 on tPlayers.name=t1.name order by tPlayers.name, exp ") &nbsp; &nbsp;// dfPlayers表示字段与内容之间的映射关系，表名为Players &nbsp; &nbsp;dfPlayers.registerTempTable("Players")
+
+# 实验知识点
+//分析自1980年以来每个年龄段参赛次数，groupBy("age").count表示通过groupBy函数以age的频数进行分组， &nbsp; // sort("age")表示将各组以age进行排序，show(100)表示展示前100行 &nbsp; dfPlayers.groupBy("age").count.sort("age").show(100) &nbsp; //查看2016年z-score排名，take(10)表示选择前10个球员并显示 &nbsp; spark.sql("Select name, zTot from Players where year=2016 order by zTot desc").take(10).foreach(println) &nbsp; //查看2016年正则化z-score排名，take(10)表示选择前10个球员并显示 &nbsp; spark.sql("Select name, nTot from Players where year=2016 order by nTot desc").take(10).foreach(println) &nbsp; //查看Curry所有数据，collect表示选择所有符合条件的球员并显示 &nbsp; spark.sql("Select * from Players where year=2016 and name='Stephen Curry'").collect.foreach(println) &nbsp; //查看Curry三分球得分排名，take(10)表示选择前10个球员并显示 &nbsp;spark.sql("select name, 3p, z3p from Players where year=2016 order by z3p desc").take(10).foreach(println)
+
+# 实验环境
+&lt;dependencies&gt; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp;&lt;scope&gt;provided&lt;/scope&gt; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-mllib_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp;&lt;scope&gt;compile&lt;/scope&gt; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.scala-lang&lt;/groupId&gt; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;scala-library&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.11.8&lt;/version&gt; &nbsp; &nbsp;&lt;/dependency&gt;&lt;/dependencies&gt;
+
+# 实验过程
+package com​import org.apache.log4j.{Level, Logger}import org.apache.spark.SparkConfimport org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}import org.apache.spark.sql.{DataFrame, Row, SparkSession}​object sparkSQL_NBA_Demo{​ &nbsp; //屏蔽日志信息 &nbsp;Logger.getLogger("org").setLevel(Level.ERROR)​ &nbsp;def main(args: Array[String]) {​ &nbsp; &nbsp;// 配置Spark环境 &nbsp; &nbsp;val conf = new SparkConf().setMaster("local[*]").setAppName("sparkSQL_NBA_demo") &nbsp; &nbsp;val spark = SparkSession &nbsp; &nbsp;  .builder &nbsp; &nbsp;  .appName(s"${this.getClass.getSimpleName}") &nbsp; &nbsp;  .config(conf) &nbsp; &nbsp;  .getOrCreate() &nbsp; &nbsp;val sc = spark.sparkContext​ &nbsp; &nbsp;// 数据路径配置 &nbsp; &nbsp;val DATA_PATH = "hdfs://localhost:8020/home/student/data" &nbsp; &nbsp;val TMP_PATH = "hdfs://localhost:8020/home/data" &nbsp; &nbsp;val RESULT_PATH = "hdfs://localhost:8020/home/data/save"​ &nbsp; &nbsp;// 定义表结构 &nbsp; &nbsp;val schemaN = StructType( &nbsp; &nbsp; &nbsp;StructField("name", StringType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("year", IntegerType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("age", IntegerType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("3P", DoubleType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("z3P", DoubleType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("zTOT", DoubleType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("n3P", DoubleType, true) :: &nbsp; &nbsp; &nbsp; &nbsp;StructField("nTOT", DoubleType, true) :: Nil)​ &nbsp; &nbsp;// 计算Z-score &nbsp; &nbsp;val score_demo = new Z_Score_demo &nbsp; &nbsp;val nStats = score_demo.z_score(sc,DATA_PATH,TMP_PATH,RESULT_PATH)​ &nbsp; &nbsp;// 构建DataFrame并注册临时表 &nbsp; &nbsp;val nPlayer = nStats.map(x =&gt; Row.fromSeq(Array(x.name, x.year, x.age) ++ &nbsp; &nbsp; &nbsp;Array(x.stats(3)) ++ Array(x.statsZ(2)) ++ Array(x.valueZ) ++ Array(x.statsN(3)) ++ Array(x.valueN))) &nbsp; &nbsp;val dfPlayersT = spark.sqlContext.createDataFrame(nPlayer, schemaN) &nbsp; &nbsp;dfPlayersT.registerTempTable("tPlayers")​ &nbsp; &nbsp;// 处理球员年龄数据并注册临时表 &nbsp; &nbsp;val dfPlayers = spark.sqlContext.sql("select age-min_age as exp,tPlayers.* from tPlayers join " + &nbsp; &nbsp; &nbsp;"(select name,min(age)as min_age from tPlayers group by name) as t1 on tPlayers.name=t1.name order by tPlayers.name, exp ") &nbsp; &nbsp;dfPlayers.registerTempTable("Players")​ &nbsp; &nbsp;// 数据分析与输出 &nbsp; &nbsp;println("===分析自1980年以来每个年龄段参赛次数===") &nbsp; &nbsp;dfPlayers.groupBy("age").count.sort("age").show(100)​ &nbsp; &nbsp;println("===查看2016年z-score排名，take(10)表示选择前10个球员并显示===") &nbsp; &nbsp;spark.sql("Select name, zTot from Players where year=2016 order by zTot desc").take(10).foreach(println)​ &nbsp; &nbsp;// 保存2016年z-score排名至CSV &nbsp; &nbsp;val result: DataFrame = spark.sql("Select name, zTot from Players where year=2016 order by zTot desc") &nbsp; &nbsp;result.coalesce(1).write.format("csv").save(s"${RESULT_PATH}")​ &nbsp; &nbsp;println("===查看Curry所有数据===") &nbsp; &nbsp;spark.sql("Select * from Players where year=2016 and name='Stephen Curry'").collect.foreach(println)​ &nbsp; &nbsp;println("===查看Curry三分球得分排名===") &nbsp; &nbsp;spark.sql("select name, 3p, z3p from Players where year=2016 order by z3p desc").take(10).foreach(println)  }}
+
+# 实验步骤
+ssh-copy-id master
+
+# 知识点介绍
+start-all.sh
+
+# 数据说明
+cd /home/spark-2.3.2-bin-hadoop2.6/./sbin/start-all.sh
+
+# 程序思路
+hadoop fs -mkdir -p /home/student/
+
+# 程序开发
+hadoop fs -put /home/student/data /home/student/
+
+# 服务器端运行
+cd /home/spark-2.3.2-bin-hadoop2.6./bin/spark-submit --master local[*] --class com.sparkSQL_NBA_Demo /home/spark-2.3.2-bin-hadoop2.6/sparkSQL_NBA_Demo-1.0-SNAPSHOT.jar
+
+============================================================
+实验6
+============================================================
+
+# Spark Streaming 编程基础
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0 bin/spark-shell
+
+# 实验简介
+import org.apache.spark._ import org.apache.spark.streaming._​ // 创建StreamingContext对象，第二个参数为处理的时间片时间间隔，设置为10分钟 val ssc = new StreamingContext(sc, Seconds(600))
+
+# 实验目的
+// 创建一个基于socket接受数据的DStream val lines = ssc.socketTextStream("localhost", 9999)
+
+# 实验内容
+val words = lines.flatMap(_.toLowerCase().split("\W+")) val pairs = words.filter(_.nonEmpty).map(word =&gt; (word, 1)) val wordCount = pairs.reduceByKey(_ + _)
+
+# 实验知识点
+//将处理结果保存到/tmp/sparkstreaming_wordcount" wordCount.saveAsTextFiles("/tmp/sparkstreaming_wordcount")
+
+# 实验环境
+nc -l -p 9999
+
+# 实验过程
+I love hadoop I Love HDFS i love MapReduce I LovE YARN I Love Spark I Love Hive
+
+# 准备工作
+// 启动Spark Streaming应用ssc.start()
+
+# StreamingContext 对象
+cd  /tmp/
+
+# DStream 对象
+cd sparkstreaming_wordcount-1586309400000
+
+# DStream 操作
+ls -al
+
+# Spark Streaming 程序的启动
+cat part-00000cat part-00009
+
+============================================================
+实验7
+============================================================
+
+# Spark Streaming 应用：计算电商商品关注度
+商品ID-20::4::7.372579::-1::0商品ID-132::1::7.238897::0::2商品ID-78::4::7.2234173::0::0
+
+# 实验简介
+&lt;dependencies&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-mllib_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.kafka&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;kafka_2.12&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.2.0&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.kafka&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;kafka-clients&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.2.0&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming-kafka_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;1.6.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;com.alibaba&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;fastjson&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;1.2.34&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;/dependencies&gt;​ &nbsp; &nbsp;&lt;properties&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;project.build.sourceEncoding&gt;UTF-8&lt;/project.build.sourceEncoding&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;maven.compiler.encoding&gt;UTF-8&lt;/maven.compiler.encoding&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;java.version&gt;1.8&lt;/java.version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;maven.compiler.source&gt;1.8&lt;/maven.compiler.source&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;maven.compiler.target&gt;1.8&lt;/maven.compiler.target&gt; &nbsp; &nbsp;&lt;/properties&gt;
+
+# 实验目的
+//AppName 自然就是当前Job的名字，Master就是Spark的主机地址，这里采用的是本地模式 SparkConf sparkConf = new SparkConf().setAppName("StreamingGoods").setMaster("local[3]"); // 新建JavaStreamingContext对象，new Duration(5000) 窗口时间，单位毫秒 JavaStreamingContext jsc = new JavaStreamingContext(sparkConf, new Duration(5000)); //把数据保存到对应的路径下 jsc.checkpoint(checkpointDir); //获取模拟数据，设置服务端地址和端口号 JavaReceiverInputDStream&lt;String&gt; jds = jsc.socketTextStream("127.0.0.1", 9999); //定义字符串，保存数据 JavaDStream&lt;String&gt; mess = jds.map(str -&gt; str); mess.print();
+
+# 实验内容
+//mapToPair就是将rdd转换为键值对rdd,与map不同的是添加了一个key JavaPairDStream&lt;String, Double&gt; splitMess = jds.mapToPair(line -&gt; {  &nbsp; &nbsp;String[] lineSplit = line.split("::");  &nbsp; &nbsp;Double followValue = Double.parseDouble(lineSplit[1]) * 0.8 + Double.parseDouble(lineSplit[2]) * 0.6 + Double.parseDouble(lineSplit[3]) * 1 + Double.parseDouble(lineSplit[4]) * 1;  &nbsp; &nbsp;return new Tuple2&lt;&gt;(lineSplit[0], followValue); });
+
+# 实验知识点
+//使用updateStateByKey来进行操作。在这里是通过updateStateByKey来以Batch Interval为单位来对历史状态进行更新， JavaPairDStream&lt;String, Double&gt; UpdateFollowValue = splitMess.updateStateByKey((newValues, statValue) -&gt; {  &nbsp; &nbsp;Double updateValue = statValue.or(0.0);  &nbsp; &nbsp;//循环遍历，更新value值  &nbsp; &nbsp;for (Double value : newValues) {  &nbsp; &nbsp; &nbsp; &nbsp;updateValue += value;  &nbsp;  }  &nbsp; &nbsp;//返回更新的值  &nbsp; &nbsp;return Optional.of(updateValue);});
+
+# 实验环境
+// 我们需要将其转化为的形式，然后再按照sortByKey来进行排序，然后进行输出 UpdateFollowValue.foreachRDD(followValue -&gt; {  &nbsp; &nbsp;JavaPairRDD&lt;Double, String&gt; followValueSort = followValue.mapToPair(valueToKey -&gt; new Tuple2&lt;&gt;(valueToKey._2, valueToKey._1)).sortByKey(false);  &nbsp; &nbsp;List&lt;Tuple2&lt;String, Double&gt;&gt; list = followValueSort.mapToPair(arg0 -&gt; new Tuple2&lt;&gt;(arg0._2, arg0._1)).take(10);  &nbsp; &nbsp;//遍历商品关注度，打印输出  &nbsp; &nbsp;for (Tuple2&lt;String, Double&gt; tu : list) {  &nbsp; &nbsp; &nbsp; &nbsp;System.out.println("商品ID: " + tu._1 + " 关注度: " + tu._2);  &nbsp;  } });
+
+# 实验过程
+package com;​import org.apache.spark.HashPartitioner;import org.apache.spark.SparkConf;import org.apache.spark.api.java.JavaPairRDD;import org.apache.spark.api.java.Optional;import org.apache.spark.streaming.Duration;import org.apache.spark.streaming.api.java.JavaDStream;import org.apache.spark.streaming.api.java.JavaPairDStream;import org.apache.spark.streaming.api.java.JavaReceiverInputDStream;import org.apache.spark.streaming.api.java.JavaStreamingContext;import scala.Tuple2;import java.io.Serializable;import java.util.List;​public class StreamingGoodsAnalysis implements Serializable { &nbsp; &nbsp;private static final long serialVersionUID = 1L; &nbsp; &nbsp;//定义一个文件夹，用于保存上一个RDD的数据 &nbsp; &nbsp;private static String checkpointDir = "checkDir";​ &nbsp; &nbsp;public static void main(String[] args) throws Exception{ &nbsp; &nbsp; &nbsp; &nbsp;//AppName 自然就是当前Job的名字，Master就是Spark的主机地址，这里采用的是本地模式 &nbsp; &nbsp; &nbsp; &nbsp;SparkConf sparkConf = new SparkConf().setAppName("StreamingGoods").setMaster("local[3]"); &nbsp; &nbsp; &nbsp; &nbsp;// 新建JavaStreamingContext对象，new Duration(5000) 窗口时间，单位毫秒 &nbsp; &nbsp; &nbsp; &nbsp;JavaStreamingContext jsc = new JavaStreamingContext(sparkConf, new Duration(5000)); &nbsp; &nbsp; &nbsp; &nbsp;//存放数据 &nbsp; &nbsp; &nbsp; &nbsp;jsc.checkpoint(checkpointDir);​ &nbsp; &nbsp; &nbsp; &nbsp;//获取模拟数据，设置服务端地址和端口号 &nbsp; &nbsp; &nbsp; &nbsp;JavaReceiverInputDStream&lt;String&gt; jds = jsc.socketTextStream("127.0.0.1", 9999); &nbsp; &nbsp; &nbsp; &nbsp;JavaDStream&lt;String&gt; mess = jds.map(str -&gt; str); &nbsp; &nbsp; &nbsp; &nbsp;mess.print();​ &nbsp; &nbsp; &nbsp; &nbsp;//mapToPair就是将rdd转换为键值对rdd,与map不同的是添加了一个key &nbsp; &nbsp; &nbsp; &nbsp;JavaPairDStream&lt;String, Double&gt; splitMess = jds.mapToPair(line -&gt; { &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//定义字符串数组 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;String[] lineSplit = line.split("::"); &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Double followValue = Double.parseDouble(lineSplit[1]) * 0.8 + Double.parseDouble(lineSplit[2]) * 0.6 + Double.parseDouble(lineSplit[3]) * 1 + Double.parseDouble(lineSplit[4]) * 1; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//返回数据 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;return new Tuple2&lt;&gt;(lineSplit[0], followValue); &nbsp; &nbsp; &nbsp;  });​ &nbsp; &nbsp; &nbsp; &nbsp;//使用updateStateByKey来进行操作。在这里是通过updateStateByKey来以Batch Interval为单位来对历史状态进行更新， &nbsp; &nbsp; &nbsp; &nbsp;JavaPairDStream&lt;String, Double&gt; UpdateFollowValue = splitMess.updateStateByKey((newValues, statValue) -&gt; { &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Double updateValue = statValue.or(0.0); &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//循环遍历，更新value值 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;for (Double value : newValues) { &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;updateValue += value; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  } &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//返回更新的值 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;return Optional.of(updateValue); &nbsp; &nbsp; &nbsp;  }, new HashPartitioner(jsc.sparkContext().defaultParallelism()));​ &nbsp; &nbsp; &nbsp; &nbsp;//实现思想，由于原RDD UpdateFollowValue的值可以知道是的形式，我们使用sortByKey是不能这样进行排序的，因为它并不是按照关注度排序。 &nbsp; &nbsp; &nbsp; &nbsp;// 我们需要将其转化为的形式，然后再按照sortByKey来进行排序，然后进行输出 &nbsp; &nbsp; &nbsp; &nbsp;UpdateFollowValue.foreachRDD(followValue -&gt; { &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;JavaPairRDD&lt;Double, String&gt; followValueSort = followValue.mapToPair(valueToKey -&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;new Tuple2&lt;&gt;(valueToKey._2, valueToKey._1)).sortByKey(false); &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//定义list数组存放数据 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;List&lt;Tuple2&lt;String, Double&gt;&gt; list = followValueSort.mapToPair(arg0 -&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;new Tuple2&lt;&gt;(arg0._2, arg0._1)).take(10); &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;//遍历商品关注度，打印输出 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;for (Tuple2&lt;String, Double&gt; tu : list) { &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;System.out.println("商品ID: " + tu._1 + " 关注度: " + tu._2); &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  } &nbsp; &nbsp; &nbsp;  });​ &nbsp; &nbsp; &nbsp; &nbsp;//启动JavaStreamingContext对象，执行计算 &nbsp; &nbsp; &nbsp; &nbsp;jsc.start(); &nbsp; &nbsp; &nbsp; &nbsp;jsc.awaitTermination(); &nbsp;  }}
+
+# 使用IDEA新建一个Maven项目：sparkCcDemo
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0 java -cp SimulatorSocketLog-1.0-SNAPSHOT.jar com.SimulatorSocket
+
+# 代码思路
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+
+# 编写代码
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/bin/spark-submit \--master local[2] \--class com.StreamingGoodsAnalysis \/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkCcDemo-1.0-SNAPSHOT.jar
+
+============================================================
+实验8
+============================================================
+
+# Spark Streaming+Flume+Kafka实现实时日志分析
+object StreamingKafkaDemo { &nbsp;// 定义StreamingKafkaDemo对象中的主函数，输入参数为存储ip与topic的字符串数组 def main(args: Array[String]): Unit = { &nbsp;// 在此写入代码}}
+
+# 实验简介
+// 创建一个sparkconf并初始化，采用.setMaster("local[*]")方法指定maser的url为本地，// local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算，// local[3]表示采用3线程计算；采用.setAppName("DirectKafkaWordCount")方法将其命名为"DirectKafkaWordCount"// Create context with 2 second batch intervalval sparkConf = new SparkConf().setMaster("local[2]").setAppName("DirectKafkaWordCount")// 创建一个心跳10ms的Streaming环境sccval ssc = new StreamingContext(sparkConf, Seconds(10))
+
+# 实验目的
+// 创建一个带有代理和主题的直链Kafka流 &nbsp; &nbsp;// Create direct kafka stream with brokers and topics &nbsp; &nbsp;// 将输入的ssc、Kafka的PreferConsistent方法以及创建的包含topics与kafkaParams的Subscribe合并到变量message中，创建Kafka监听事件 &nbsp; &nbsp;val messages = KafkaUtils.createDirectStream[String, String]( &nbsp; &nbsp; &nbsp;ssc, &nbsp; &nbsp; &nbsp;PreferConsistent, &nbsp; &nbsp; &nbsp;Subscribe[String, String](topics, kafkaParams))
+
+# 实验内容
+// 把流数据按行提取后，将其分成词并计数，然后打印出来// Get the lines, split them into words, count the words and print// 定义变量lines：将messages后两个元素建立键值对关系val lines = messages.map(record =&gt; record.value)// 将输入的lines按照空格分割成多个词val words = lines.flatMap(_.split(" "))// 定义变量wordCounts：调用map-reduce方法并进行归约计算，从而得到词频的统计量val wordCounts = words.map(x =&gt; (x, 1L)).reduceByKey(_ + _)// 将wordCounts打印出来wordCounts.print()​// 启动ssc任务，开始统计单词ssc.start()// 等所有已提交的任务（包括正在跑的和队列中等待的）执行完或者等超时时间到或者线程被中断，抛出InterruptedExceptionssc.awaitTermination()
+
+# 实验知识点
+&lt;dependencies&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.kafka&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;kafka_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.kafka&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;kafka-clients&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt; &nbsp; &lt;dependency&gt; &nbsp; &nbsp; &lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &lt;artifactId&gt;spark-streaming-kafka-0-10_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &lt;version&gt;2.4.0&lt;/version&gt; &nbsp; &lt;/dependency&gt;&lt;/dependencies&gt;
+
+# 实验环境
+package com​import org.apache.kafka.common.serialization.StringDeserializerimport org.apache.spark.SparkConfimport org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribeimport org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistentimport org.apache.spark.streaming.kafka010._import org.apache.spark.streaming.{Seconds, StreamingContext}​object StreamingKafkaDemo { &nbsp; &nbsp;def main(args: Array[String]): Unit = {​ &nbsp; &nbsp; &nbsp; &nbsp;// 创建一个sparkconf并初始化，采用.setMaster("local[*]")方法指定maser的url为本地， &nbsp; &nbsp; &nbsp; &nbsp;// local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算， &nbsp; &nbsp; &nbsp; &nbsp;// local[3]表示采用3线程计算；采用.setAppName("DirectKafkaWordCount")方法将其命名为"DirectKafkaWordCount" &nbsp; &nbsp; &nbsp; &nbsp;// Create context with 2 second batch interval &nbsp; &nbsp; &nbsp; &nbsp;val sparkConf = new SparkConf().setMaster("local[2]").setAppName("DirectKafkaWordCount") &nbsp; &nbsp; &nbsp; &nbsp;// 创建一个心跳10ms的Streaming环境scc &nbsp; &nbsp; &nbsp; &nbsp;val ssc = new StreamingContext(sparkConf, Seconds(10))​ &nbsp; &nbsp; &nbsp; &nbsp;// 配置Topic，名称为：cmcc &nbsp; &nbsp; &nbsp; &nbsp;val topics = Array("cmcc")​ &nbsp; &nbsp; &nbsp; &nbsp;// 设置kafka参数 &nbsp; &nbsp; &nbsp; &nbsp;val kafkaParams = Map[String, Object]( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;// 将bootstrap.servers的IP指定为master:9092 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"bootstrap.servers" -&gt; "master:9092", &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"key.deserializer" -&gt; classOf[StringDeserializer], &nbsp; &nbsp;//序列化为StringDeserializer类的Key &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"value.deserializer" -&gt; classOf[StringDeserializer], //序列化StringDeserializer类的Key &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"group.id" -&gt; "use_a_separate_group_id_for_each_stream", &nbsp;// 设置kafka组名称 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"auto.offset.reset" -&gt; "latest", &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;"enable.auto.commit" -&gt; (false: java.lang.Boolean)) &nbsp; // 关闭自动提交​ &nbsp; &nbsp; &nbsp; &nbsp;// 创建一个带有代理和主题的直链Kafka流 &nbsp; &nbsp; &nbsp; &nbsp;// Create direct kafka stream with brokers and topics &nbsp; &nbsp; &nbsp; &nbsp;// 将输入的ssc、Kafka的PreferConsistent方法以及创建的包含topics与kafkaParams的Subscribe合并到变量message中，创建Kafka直链流 &nbsp; &nbsp; &nbsp; &nbsp;val messages = KafkaUtils.createDirectStream[String, String]( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;ssc, &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;PreferConsistent, &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;Subscribe[String, String](topics, kafkaParams))​ &nbsp; &nbsp; &nbsp; &nbsp;// 把流数据按行提取后，将其分成词并计数，然后打印出来 &nbsp; &nbsp; &nbsp; &nbsp;// Get the lines, split them into words, count the words and print &nbsp; &nbsp; &nbsp; &nbsp;// 定义变量lines：将messages后两个元素建立键值对关系 &nbsp; &nbsp; &nbsp; &nbsp;val lines = messages.map(record =&gt; record.value) &nbsp; &nbsp; &nbsp; &nbsp;// 将输入的lines按照空格分割成多个词 &nbsp; &nbsp; &nbsp; &nbsp;val words = lines.flatMap(_.split(" ")) &nbsp; &nbsp; &nbsp; &nbsp;// 定义变量wordCounts：调用map-reduce方法并进行归约计算，从而得到词频的统计量 &nbsp; &nbsp; &nbsp; &nbsp;val wordCounts = words.map(x =&gt; (x, 1L)).reduceByKey(_ + _) &nbsp; &nbsp; &nbsp; &nbsp;// 将wordCounts打印出来 &nbsp; &nbsp; &nbsp; &nbsp;wordCounts.print()​ &nbsp; &nbsp; &nbsp; &nbsp;// 启动ssc任务，开始统计单词 &nbsp; &nbsp; &nbsp; &nbsp;ssc.start() &nbsp; &nbsp; &nbsp; &nbsp;// 等所有已提交的任务（包括正在跑的和队列中等待的）执行完或者等超时时间到或者线程被中断，抛出InterruptedException &nbsp; &nbsp; &nbsp; &nbsp;ssc.awaitTermination() &nbsp;  }}
+
+# 实验步骤
+cd $HADOOP_HOME/sbin/start-all.sh
+
+# 环境描述
+cd /home/kafka/kafka_2.11-0.10.0.1nohup ./bin/zookeeper-server-start.sh config/zookeeper.properties &amp;
+
+# 编码思路
+cd /home/kafka/kafka_2.11-0.10.0.1nohup ./bin/kafka-server-start.sh config/server.properties &amp;
+
+# 开发过程
+cd /home/java/jdk1.8.0_40/bin/java -cp /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/SimulatorLog-1.0-SNAPSHOT.jar com.SimulatorLog
+
+# 服务器端运行
+cd /home/flume/apache-flume-1.6.0-cdh5.7.0-binnohup bin/flume-ng agent --conf-file conf/flume-conf.properties -c conf/ --name agent -Dflume.root.logger=DEBUG,console &amp;
+
+============================================================
+实验9
+============================================================
+
+# Spark MLlib 应用：聚类K-means 算法评估足球比赛
+&lt;dependencies&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;scope&gt;provided&lt;/scope&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-mllib_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;scope&gt;compile&lt;/scope&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;com.huaban&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;jieba-analysis&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;1.0.2&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;com.alibaba&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;fastjson&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;1.2.34&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;/dependencies&gt;
+
+# 实验简介
+package com​import org.apache.spark.ml.feature.Normalizerimport org.apache.spark.ml.linalg.Vectorsimport org.apache.spark.ml.linalg.Vectorimport org.apache.spark.rdd.RDDimport org.apache.spark.sql.{DataFrame, SparkSession}​class FootballNormalization{}​object FootballNormalization { //接受数据进行归一化处理 def parseData(ds:RDD[String],sparkSession: SparkSession):DataFrame ={ val data = ds.map { line =&gt; val array=line.split(",") val id=array(0) (id,Vectors.dense(array.drop(1).map(_.toDouble))) } //将数据以dataframe格式处理 val dataFrame = sparkSession.createDataFrame(data).toDF("id", "features") //创建归一化对象，设置归一化对象的输入为特征，输出归一化化特征，以及归一范围 val normalizer = new Normalizer() .setInputCol("features") .setOutputCol("normFeatures") .setP(1.0) //对数据进行归一化处理 val l1NormData = normalizer.transform(dataFrame) println("Normalized using L^1 norm") l1NormData }}
+
+# 实验目的
+package com​import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}import org.apache.spark.mllib.linalg.Vectorimport org.apache.spark.rdd.RDD​class FootballCluster{}​object FootballCluster { &nbsp;def wcss(parsedData:RDD[Vector])={ &nbsp; &nbsp;/*划分训练集和测试集80/20*/ &nbsp; &nbsp;val scaled_data = parsedData.randomSplit(Array(0.8, 0.2), 12L) &nbsp; &nbsp;val data_train = scaled_data(0) &nbsp; &nbsp;val data_test = scaled_data(1) &nbsp; &nbsp;/* &nbsp; &nbsp;* 分别修改聚类的个数和迭代的次数，进行参数优化，得到最佳的结果 &nbsp; &nbsp;* 应用交叉验证来选择模型最优的类中心数目。这和监督学习的过程一样，需要将数据集 &nbsp; &nbsp;* 分割为训练集和测试集，然后在训练集上训练模型，在测试集上评估感兴趣的指标的性能。 &nbsp; &nbsp;* 用80/20划分得到训练集和测试集，并使用MLlib内置的WCSS进行评估 &nbsp; &nbsp;* */ &nbsp; &nbsp;val newsCosts = Seq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15).map { &nbsp; &nbsp; &nbsp;param =&gt; &nbsp; &nbsp; &nbsp;  (param, KMeans.train(data_train, param, 50).computeCost(data_test)) &nbsp;  } &nbsp; &nbsp;println("sina-news clustering cross-validation:") &nbsp; &nbsp;newsCosts.foreach { &nbsp; &nbsp; &nbsp;case (k, cost) =&gt; &nbsp; &nbsp; &nbsp; &nbsp;println(f"WCSS for K=$k id $cost%2.2f") &nbsp;  }  }​ &nbsp;def trainModel(parsedData:RDD[Vector],k:Int,maxIterations:Int):KMeansModel={ &nbsp; &nbsp;/*划分训练集和测试集80/20*/ &nbsp; &nbsp;val scaled_data = parsedData.randomSplit(Array(0.8, 0.2), 12L) &nbsp; &nbsp;val data_train = parsedData &nbsp;//scaled_data(0) &nbsp; &nbsp;val data_test = scaled_data(1) &nbsp; &nbsp;val initializationMode = "" &nbsp; &nbsp;//训练KMeans模型 &nbsp; &nbsp;val kmeansModel = KMeans.train(data_train, k, maxIterations) &nbsp; &nbsp;//聚类中心 &nbsp; &nbsp;val clusterCenters = kmeansModel.clusterCenters &nbsp; &nbsp;clusterCenters.foreach(u=&gt;println(u)) &nbsp; &nbsp;kmeansModel  }}
+
+# 实验内容
+//初始化Spark上下文 //local: 所有计算都运行在一个线程当中，没有任何并行计算，通常我们在本机执行一些测试代码，或者练手，就用这种模式。 //local[K]: 指定使用几个线程来运行计算，比如local[3]就是运行3个worker线程。通常我们的cpu有几个core，就指定几个线程，最大化利用cpu的计算能力 //local[*]: 这种模式直接帮你按照cpu最多cores来设置线程数了。 val conf = new SparkConf().setMaster("local[3]").setAppName("football cluster") val sparkSession = SparkSession.builder().master("local[3]") .appName("football cluster") .config(conf) .getOrCreate() //读取文件，此读取文件的格式为服务器读取的方法 / var ds = sparkSession.sparkContext.textFile(args(0), 1) //此读取文件的格式为读取本地数据的方法 //var ds = sparkSession.sparkContext.textFile("file:///E:\tmp\spark\data\data.csv", 1) //读取文件的表头，并去除 val header = ds.first() ds = ds.filter(row =&gt; row != header)
+
+# 实验知识点
+&nbsp; &nbsp;//对数据进行归一化处理 &nbsp; &nbsp;val l1NormData=FootballNormalization.parseData(ds,sparkSession) &nbsp; &nbsp;l1NormData.cache()
+
+# 实验环境
+//此方法为FootballCluster类下的方法FootballCluster.wcss(data1)
+
+# 实验过程
+//调用训练模型的方法trainModel是FootballCluster类下的方法，后面介绍 val kmeansModel=FootballCluster.trainModel(data1,args(1).toInt,args(2).toInt)
+
+# 数据准备及主函数创建
+result.collect().foreach(println(_)) result.saveAsTextFile(args(3))
+
+# 数据归一化
+package com​import org.apache.spark.ml.feature.Normalizerimport org.apache.spark.ml.linalg.Vectorimport org.apache.spark.sql.types.StructTypeimport org.apache.spark.mllib.linalg.Vectors.fromMLimport org.apache.spark.sql.{SQLContext, SparkSession}import org.apache.spark.{SparkConf, SparkContext}​ //　任何Spark程序都是SparkContext开始的，SparkContext的初始化需要一个SparkConf对象，SparkConf包含了Spark集群配置的各种参数。 //初始化后，就可以使用SparkContext对象所包含的各种方法来创建和操作RDD和共享变量。object Driver { def main(args: Array[String]): Unit = { //初始化Spark上下文 //local: 所有计算都运行在一个线程当中，没有任何并行计算，通常我们在本机执行一些测试代码，或者练手，就用这种模式。 //local[K]: 指定使用几个线程来运行计算，比如local[3]就是运行3个worker线程。通常我们的cpu有几个core，就指定几个线程，最大化利用cpu的计算能力 //local[*]: 这种模式直接帮你按照cpu最多cores来设置线程数了。 val conf = new SparkConf().setMaster("local[3]").setAppName("football cluster") val sparkSession = SparkSession.builder().master("local[3]") .appName("football cluster") .config(conf) .getOrCreate() //读取文件 var ds = sparkSession.sparkContext.textFile(args(0), 1)// var ds = sparkSession.sparkContext.textFile("file:///E:\tmp\spark\data\data.csv", 1) //读取文件的表头，并去除 val header = ds.first() ds = ds.filter(row =&gt; row != header) //对数据进行归一化处理 val l1NormData=FootballNormalization.parseData(ds,sparkSession) l1NormData.cache() //normFeatures:进行L1归一化 //features:没有进行归一化 val data1=l1NormData.rdd.map{r=&gt; fromML( r.getAs[Vector]("features").toDense) } //执行WCSS，选择最佳K值 FootballCluster.wcss(data1) //调用训练模型，传入数据，将聚类个数设置为3，迭代50次 val kmeansModel=FootballCluster.trainModel(data1,args(1).toInt,args(2).toInt) //normFeatures：进行L1归一化；features：没有进行归一化 val data2=l1NormData.rdd.map{r=&gt; (r.getAs[String]("id"),fromML( r.getAs[Vector]("features").toDense)) } //使用聚类模型测试模型效果，并保存结果，lable即聚类标签 val result = data2.map { line =&gt; val id=line._1 val lable=kmeansModel.predict(line._2) (lable,id) }.reduceByKey((v1,v2)=&gt;v1+","+v2) //打印聚类结果。保存到文件中result.collect().foreach(println(_))//服务器输出格式result.saveAsTextFile(args(3))//本地输出格式// result.saveAsTextFile("file:///E:\tmp\spark\results") }}
+
+# 完成聚类分析
+cd $HADOOP_HOME/sbin/start-all.sh
+
+# 读取数据和归一化并聚类
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib hdfs dfs -put data.csv hdfs://master:8020/
+
+# 实验环境准备
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/bin/spark-submit \--master local[2] \--class com.Driver \/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkFootballKmeansDemo-1.0-SNAPSHOT.jar  \hdfs://master:8020/data.csv \3 50 \hdfs://master:8020/result
+
+# 对程序进行工程打包与jar包上传
+hdfs  dfs -ls /result
+
+# 在服务器执行以下命令运行程序
+hdfs  dfs &nbsp;-cat /result/part-00000
+
+============================================================
+实验10
+============================================================
+
+# Spark MLlib 应用：构建回归模型
+&lt;dependencies&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;scope&gt;provided&lt;/scope&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-mllib_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;scope&gt;compile&lt;/scope&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.scala-lang&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;scala-library&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.10.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;/dependencies&gt;
+
+# 实验简介
+package com​import org.apache.log4j.{Level, Logger}import org.apache.spark.{SparkContext, SparkConf}import org.apache.spark.mllib.regression.LinearRegressionWithSGDimport org.apache.spark.mllib.regression.LabeledPointimport org.apache.spark.mllib.linalg.Vectors​object LinearRegression { &nbsp; &nbsp;def main(args:Array[String]): Unit ={ &nbsp; &nbsp; &nbsp; &nbsp;// … … &nbsp; &nbsp; &nbsp; &nbsp;//在此处继续添加后续代码 &nbsp; &nbsp; &nbsp; &nbsp;// … … &nbsp;  }}
+
+# 实验目的
+Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)Logger.getLogger("org.eclipse.jetty.server").setLevel(Level.OFF)
+
+# 实验内容
+// 调用setAppName方法，将SparkConf命名为LinearRegression；// 采用.setMaster("local[*]")方法中指定local表示采用本地模式// local[*]表示采用多少个线程用于计算，local[*]: 表示利用cpu可以支持的最多的线程数// local 表示单线程，local[3]表示采用3线程计算val conf = new SparkConf().setAppName("LinearRegression").setMaster("local[*]")// 使用变量 sc来表示SparkContextval sc = new SparkContext(conf)
+
+# 实验知识点
+// 用于加载数据，代码如下：// 提取输入参数为args(0)的数据到变量data，用于数据预处理val data = sc.textFile(args(0))// 采用map方法，通过split(',')方法将data中的数据以以','分割并建立标签-数据的键值对val parsedData = data.map { line =&gt; &nbsp; &nbsp;val parts = line.split(',') &nbsp; &nbsp;LabeledPoint(parts(0).toDouble, Vectors.dense(parts(1).split(' ').map(_.toDouble)))}
+
+# 实验环境
+// 建立线性回归模型并训练// 指定迭代次数为100val numIterations = 100// 依据输入的数据与标签数据、迭代次数，采用随机梯度下降的方法建立并训练线性回归模型val model = LinearRegressionWithSGD.train(parsedData, numIterations)
+
+# 实验步骤
+// 计算均方差，用以评估训练样本模型并计算训练误差 &nbsp; &nbsp;val valuesAndPreds = parsedData.map { point =&gt; &nbsp; &nbsp;// 提取数据的预测标签 &nbsp; &nbsp;val prediction = model.predict(point.features) &nbsp;  (point.label, prediction)}// 计算均方差预测标签与实际标签的均方差val MSE=valuesAndPreds.map{case(v,p)=&gt;math.pow((v-p),2)}.reduce(_+_)/valuesAndPreds.countprintln("training Mean Squared Error = " + MSE)sc.stop()
+
+# 开发过程
+package com​import org.apache.log4j.{Level, Logger}import org.apache.spark.{SparkContext, SparkConf}import org.apache.spark.mllib.regression.LinearRegressionWithSGDimport org.apache.spark.mllib.regression.LabeledPointimport org.apache.spark.mllib.linalg.Vectors​object LinearRegression { &nbsp; &nbsp;def main(args: Array[String]): Unit ={ &nbsp; &nbsp;// 屏蔽不必要的日志显示终端上 &nbsp; &nbsp;Logger.getLogger("org.apache.spark").setLevel(Level.ERROR) &nbsp; &nbsp;Logger.getLogger("org.eclipse.jetty.server").setLevel(Level.OFF)​ &nbsp; &nbsp;// 设置运行环境 &nbsp; &nbsp;val conf = new SparkConf().setAppName("LinearRegression").setMaster("local[*]") &nbsp; &nbsp;val sc = new SparkContext(conf)​ &nbsp; &nbsp;// 加载数据 &nbsp; &nbsp;val data = sc.textFile(args(0)) &nbsp; &nbsp;val parsedData = data.map { line =&gt; &nbsp; &nbsp;// 按照分隔符split解析数据，将数据分行两个元素 &nbsp; &nbsp; &nbsp;val parts = line.split(',') &nbsp; &nbsp;// 以两个元素为分类中可视为负样本，建一个标签为的稀疏向量标注点 &nbsp; &nbsp; &nbsp;LabeledPoint(parts(0).toDouble, Vectors.dense(parts(1).split(' ').map(_.toDouble))) &nbsp;  } &nbsp; &nbsp; &nbsp; &nbsp;// 设置迭代次数 &nbsp; &nbsp;val numIterations = 100​ &nbsp; &nbsp;// 建立线性回归模型并训练 &nbsp; &nbsp;val model = LinearRegressionWithSGD.train(parsedData, numIterations)​ &nbsp; &nbsp;// 源数据格式化 &nbsp; &nbsp;val valuesAndPreds = parsedData.map { point =&gt; &nbsp; &nbsp;// 使用模型预测数据 &nbsp; &nbsp; &nbsp;val prediction = model.predict(point.features) &nbsp; &nbsp;  (point.label, prediction) &nbsp;  } &nbsp; &nbsp;// 计算均方差 &nbsp; &nbsp;val MSE=valuesAndPreds.map{case(v,p)=&gt;math.pow((v-p),2)}.reduce(_+_)/valuesAndPreds.count &nbsp; &nbsp;// 打印预测数据println("training Mean Squared Error = " + MSE)​ &nbsp; &nbsp;sc.stop() }}
+
+# 创建程序文件
+cd $HADOOP_HOME/sbin/start-all.sh
+
+# 实验环境准备工作
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib hdfs dfs -put lpsa.data hdfs://master:8020/
+
+# 上传至服务器端运行
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0bin/spark-submit \--master local[*] \--class com.LinearRegression \/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkDemo-1.0-SNAPSHOT.jar \hdfs://master:8020/lpsa.data
+
+============================================================
+实验11
+============================================================
+
+# Spark GraphX 应用：PageRank算法计算社交网络用户的受欢迎程度
+1,BarackObama,Barack Obama2,ladygaga,Goddess of Love3,jeresig,John Resing4,justinbieber,Justin Bieber6,matei_zaharia,Matei Zaharia7,odersky,Matin Odersky8,anonsys
+
+# 实验简介
+2 14 11 26 37 37 66 73 7
+
+# 实验目的
+&nbsp; &nbsp;&lt;dependencies&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-core_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-streaming_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;scope&gt;provided&lt;/scope&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-sql_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;dependency&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;groupId&gt;org.apache.spark&lt;/groupId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;artifactId&gt;spark-graphx_2.11&lt;/artifactId&gt; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&lt;version&gt;2.3.3&lt;/version&gt; &nbsp; &nbsp; &nbsp; &nbsp;&lt;/dependency&gt; &nbsp; &nbsp;&lt;/dependencies&gt;
+
+# 实验内容
+package com​import org.apache.spark.graphx.GraphLoaderimport org.apache.spark.sql.SparkSession​object PageRankExample { &nbsp; &nbsp;def main(args: Array[String]): Unit = { &nbsp; &nbsp; &nbsp; &nbsp;// … … &nbsp; &nbsp; &nbsp; &nbsp;//在此处继续添加后续代码 &nbsp; &nbsp; &nbsp; &nbsp;// … … &nbsp;  }}
+
+# 实验知识点
+// Creates a SparkSession.//通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它val spark = SparkSession &nbsp;  .builder &nbsp;  .master("local[3]") &nbsp;  .appName(s"${this.getClass.getSimpleName}") &nbsp; &nbsp;//通过getOrCreate的方式创建SparkSession &nbsp;  .getOrCreate()
+
+# 实验环境
+//使用变量 sc来表示SparkContext val sc = spark.sparkContext
+
+# 实验步骤
+// Load the edges as a graph// 从特定的边列表文件中读取数据生成图框架，arg(0)是一个参数，表示存储边数据的文件val graph = GraphLoader.edgeListFile(sc, args(0))
+
+# 环境准备
+// Run PageRank// 用上面的图框架来调用pageRank(动态)算法，指定终止条件为两次迭代结果的差值小于“0.0001”// 注意：静态调用的方法名是staticPageRank(Int)，而本实验采用动态调用，故需设置迭代的终止条件// vertices将返回顶点属性val ranks = graph.pageRank(0.0001).vertices
+
+# 图论基础知识
+// Join the ranks with the usernames// 将上面得到的ranks（顶点属性）和用户进行关系连接// 首先，读取一个包含了用户信息的文件(由参数args(1)表示)，然后调用map函数对文件进行解析，最后返回RDDval users = sc.textFile(args(1)).map { line =&gt;// 按照分隔符split解析数据，将数据分行两个元素，即将文件里的每行数据按 ”,” 切开val fields = line.split(",")//返回存储了处理后数据的RDD (fields(0).toLong, fields(1))}
+
+# PageRank算法实现步骤
+// 这里具体实现了将PageRank的rank结果和用户列表一一对应起来// 从map函数的内容可以看出是按id来进行连接，但返回的结果只含用户名和它的相应PR值val ranksByUsername = users.join(ranks).map { &nbsp; &nbsp;case (id, (username, rank)) =&gt; (username, rank) }
+
+# 数据说明
+// 收集上面RDD里的数据并打印出来，每打印一条数据换行输出 println(ranksByUsername.collect().mkString("\n"))
+
+# 程序开发过程
+package com​import org.apache.spark.graphx.GraphLoaderimport org.apache.spark.sql.SparkSession​object PageRankExample { &nbsp; &nbsp;def main(args: Array[String]): Unit = {​ &nbsp; &nbsp;// Creates a SparkSession. &nbsp; &nbsp;//通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它 &nbsp; &nbsp; &nbsp; &nbsp;val spark = SparkSession &nbsp; &nbsp; &nbsp;  .builder &nbsp; &nbsp; &nbsp;  .appName(s"${this.getClass.getSimpleName}") &nbsp; &nbsp; &nbsp;  .getOrCreate() &nbsp; &nbsp; &nbsp; &nbsp;//使用变量 sc来表示SparkContext &nbsp; &nbsp;val sc = spark.sparkContext &nbsp; &nbsp; &nbsp; &nbsp;// Load the edges as a graph &nbsp; &nbsp;// 从特定的边列表文件中读取数据生成图框架，arg(0)是一个参数，表示存储边数据的文件 &nbsp; &nbsp;val graph = GraphLoader.edgeListFile(sc, args(0)) &nbsp; &nbsp; &nbsp; &nbsp;// Run PageRank &nbsp; &nbsp;// 用上面的图框架来调用pageRank(动态)算法，指定终止条件为两次迭代结果的差值小于“0.0001” &nbsp; &nbsp;// 注意：静态调用的方法名是staticPageRank(Int)，而本实验采用动态调用，故需设置迭代的终止条件 &nbsp; &nbsp;// vertices将返回顶点属性 &nbsp; &nbsp;val ranks = graph.pageRank(0.0001).vertices &nbsp; &nbsp; &nbsp; &nbsp;// Join the ranks with the usernames &nbsp; &nbsp;// 将上面得到的ranks（顶点属性）和用户进行关系连接 &nbsp; &nbsp;// 首先，读取一个包含了用户信息的文件(由参数args(1)表示)，然后调用map函数对文件进行解析，最后返回RDD &nbsp; &nbsp;val users = sc.textFile(args(1)).map { line =&gt; &nbsp; &nbsp;// 按照分隔符split解析数据，将数据分行两个元素 &nbsp; &nbsp;val fields = line.split(",") &nbsp; &nbsp; // 返回存储了处理后数据的RDD &nbsp;  (fields(0).toLong, fields(1)) }  &nbsp; &nbsp; // 这里具体实现了将ranks和用户列表一一对应起来 &nbsp; &nbsp; // 从map函数的内容可以看出是按id来进行连接，但返回的结果只含用户名和它的相应PR值 &nbsp; &nbsp; val ranksByUsername = users.join(ranks).map { &nbsp; &nbsp; &nbsp; &nbsp; case (id, (username, rank)) =&gt; (username, rank) &nbsp; &nbsp; } &nbsp; &nbsp;  &nbsp; &nbsp; // 收集上面RDD里的数据并打印出来，每打印一条数据换行输出 &nbsp; &nbsp; println(ranksByUsername.collect().mkString("\n")) &nbsp; &nbsp;  &nbsp; &nbsp; spark.stop() &nbsp; }}

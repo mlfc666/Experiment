@@ -1,0 +1,7 @@
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+
+bin/spark-submit \
+--master local[*] \
+--class com.LinearRegression \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkDemo-1.0-SNAPSHOT.jar \
+file:///home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib/lpsa.data

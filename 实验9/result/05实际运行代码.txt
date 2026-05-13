@@ -1,0 +1,7 @@
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/bin/spark-submit \
+--master local[2] \
+--class com.Driver \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkFootballKmeansDemo-1.0-SNAPSHOT.jar \
+file:///home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib/data.csv \
+3 50 \
+file:///home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib/result

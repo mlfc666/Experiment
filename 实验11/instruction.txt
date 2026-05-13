@@ -1,0 +1,143 @@
+
+# 数据说明
+1,BarackObama,Barack Obama
+2,ladygaga,Goddess of Love
+3,jeresig,John Resing
+4,justinbieber,Justin Bieber
+6,matei_zaharia,Matei Zaharia
+7,odersky,Matin Odersky
+8,anonsys
+2 1
+4 1
+1 2
+6 3
+7 3
+7 6
+6 7
+3 7
+
+# 程序开发过程
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.3.3</version>
+<scope>provided</scope>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-graphx_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+</dependencies>
+package com
+​
+import org.apache.spark.graphx.GraphLoader
+import org.apache.spark.sql.SparkSession
+​
+object PageRankExample {
+def main(args: Array[String]): Unit = {
+// … …
+//在此处继续添加后续代码
+// … …
+}
+}
+// Creates a SparkSession.
+//通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它
+val spark = SparkSession
+.builder
+.master("local[3]")
+.appName(s"${this.getClass.getSimpleName}")
+//通过getOrCreate的方式创建SparkSession
+.getOrCreate()
+//使用变量 sc来表示SparkContext
+val sc = spark.sparkContext
+// Load the edges as a graph
+// 从特定的边列表文件中读取数据生成图框架，arg(0)是一个参数，表示存储边数据的文件
+val graph = GraphLoader.edgeListFile(sc, args(0))
+// Run PageRank
+// 用上面的图框架来调用pageRank(动态)算法，指定终止条件为两次迭代结果的差值小于“0.0001”
+// 注意：静态调用的方法名是staticPageRank(Int)，而本实验采用动态调用，故需设置迭代的终止条件
+// vertices将返回顶点属性
+val ranks = graph.pageRank(0.0001).vertices
+// Join the ranks with the usernames
+// 将上面得到的ranks（顶点属性）和用户进行关系连接
+// 首先，读取一个包含了用户信息的文件(由参数args(1)表示)，然后调用map函数对文件进行解析，最后返回RDD
+val users = sc.textFile(args(1)).map { line =>
+// 按照分隔符split解析数据，将数据分行两个元素，即将文件里的每行数据按 ”,” 切开
+val fields = line.split(",")
+//返回存储了处理后数据的RDD
+(fields(0).toLong, fields(1))
+}
+// 这里具体实现了将PageRank的rank结果和用户列表一一对应起来
+// 从map函数的内容可以看出是按id来进行连接，但返回的结果只含用户名和它的相应PR值
+val ranksByUsername = users.join(ranks).map {
+case (id, (username, rank)) => (username, rank)
+}
+// 收集上面RDD里的数据并打印出来，每打印一条数据换行输出
+println(ranksByUsername.collect().mkString("\n"))
+package com
+​
+import org.apache.spark.graphx.GraphLoader
+import org.apache.spark.sql.SparkSession
+​
+object PageRankExample {
+def main(args: Array[String]): Unit = {
+​
+// Creates a SparkSession.
+//通过.build与.appName初始化SparkSession，并通过getOrCreate的方式创建它
+val spark = SparkSession
+.builder
+.appName(s"${this.getClass.getSimpleName}")
+.getOrCreate()
+//使用变量 sc来表示SparkContext
+val sc = spark.sparkContext
+// Load the edges as a graph
+// 从特定的边列表文件中读取数据生成图框架，arg(0)是一个参数，表示存储边数据的文件
+val graph = GraphLoader.edgeListFile(sc, args(0))
+// Run PageRank
+// 用上面的图框架来调用pageRank(动态)算法，指定终止条件为两次迭代结果的差值小于“0.0001”
+// 注意：静态调用的方法名是staticPageRank(Int)，而本实验采用动态调用，故需设置迭代的终止条件
+// vertices将返回顶点属性
+val ranks = graph.pageRank(0.0001).vertices
+// Join the ranks with the usernames
+// 将上面得到的ranks（顶点属性）和用户进行关系连接
+// 首先，读取一个包含了用户信息的文件(由参数args(1)表示)，然后调用map函数对文件进行解析，最后返回RDD
+val users = sc.textFile(args(1)).map { line =>
+// 按照分隔符split解析数据，将数据分行两个元素
+val fields = line.split(",")
+// 返回存储了处理后数据的RDD
+(fields(0).toLong, fields(1))
+}
+// 这里具体实现了将ranks和用户列表一一对应起来
+// 从map函数的内容可以看出是按id来进行连接，但返回的结果只含用户名和它的相应PR值
+val ranksByUsername = users.join(ranks).map {
+case (id, (username, rank)) => (username, rank)
+}
+// 收集上面RDD里的数据并打印出来，每打印一条数据换行输出
+println(ranksByUsername.collect().mkString("\n"))
+spark.stop()
+}
+}
+cd $HADOOP_HOME/
+sbin/start-all.sh
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/graphx
+hdfs dfs -put followers.txt hdfs://master:8020/
+hdfs dfs -put users.txt hdfs://master:8020/
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+bin/spark-submit \
+--master local[*] \
+--class com.PageRankExample \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/PageRankExample-1.0-SNAPSHOT.jar \
+hdfs://master:8020/followers.txt \
+hdfs://master:8020/users.txt \

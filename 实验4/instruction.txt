@@ -1,0 +1,55 @@
+
+# 准备工作
+cd /tmp
+vi Subject.json
+{"class":"java","type":"base","hour":20}
+{"class":"mysql","type":"base","hour":30}
+{"class":"python","type":"base","hour":25}
+{"class":"datawhare","type":"base","hour":20}
+{"class":"hadoop","type":"training","hour":68}
+{"class":"hive","type":"training","hour":38}
+{"class":"hbase","type":"training","hour":15}
+{"class":"spark","type":"training","hour":60}
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+bin/spark-shell
+
+# SparkSession与SparkContext
+import org.apache.spark.sql.SparkSession
+val spark = SparkSession.builder().appName("Spark SQL App").getOrCreate()
+// 引入包便于把 RDD 隐式转换为 DataFrame
+import spark.implicits._
+
+# DataFrame对象
+//读取外部数据源创建 DataFrame 对象
+val df = spark.read.json("/tmp/Subject.json")
+
+# Spark DataFrame 对象基本操作
+df.show()
+//其中，Count:记录条数，Mean:平均值，Stddev:样本标准差，Min:最小值，Max:最大值
+df.describe("hour").show()
+df.collect()
+df.collectAsList()
+df.printSchema()
+df.where("type = 'training' or hour > 20").show()
+df.select("class","type").show()
+df.filter(df("type").equalTo("training")).select("class", "type").show()
+df.limit(5).show
+df.orderBy(df("hour").desc).show()
+df.groupBy("type").count().show()
+
+# Spark DataFrame 中使用SQL语句
+df.createOrReplaceTempView("subject")
+//查询学时长度在20与40之间的课程名称
+val sqlDF = spark.sql("SELECT class FROM subject WHERE hour >= 20 and hour <= 40")
+sqlDF.show()
+df.write.format("parquet").save("/tmp/Subject.parquet")
+// 注册成为全局临时表
+df.createGlobalTempView("GlobalSubject")
+// newSession()返回一个新的SparkSession对象，引用全局临时表需要 global_temp 标识
+spark.newSession().sql("SELECT class,hour FROM global_temp.GlobalSubject WHERE hour >= 20 and hour <= 40").show()
+:quit
+cd /tmp
+ls
+cd Subject.parquet
+ls
+cat part-00000-e4d81014-1642-4056-a781-f52cd4a9c6c5-c000.snappy.parquet

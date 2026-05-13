@@ -1,0 +1,150 @@
+
+# 编码思路
+object StreamingKafkaDemo {
+// 定义StreamingKafkaDemo对象中的主函数，输入参数为存储ip与topic的字符串数组
+def main(args: Array[String]): Unit = {
+// 在此写入代码
+}
+}
+// 创建一个sparkconf并初始化，采用.setMaster("local[*]")方法指定maser的url为本地，
+// local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算，
+// local[3]表示采用3线程计算；采用.setAppName("DirectKafkaWordCount")方法将其命名为"DirectKafkaWordCount"
+// Create context with 2 second batch interval
+val sparkConf = new SparkConf().setMaster("local[2]").setAppName("DirectKafkaWordCount")
+// 创建一个心跳10ms的Streaming环境scc
+val ssc = new StreamingContext(sparkConf, Seconds(10))
+// 创建一个带有代理和主题的直链Kafka流
+// Create direct kafka stream with brokers and topics
+// 将输入的ssc、Kafka的PreferConsistent方法以及创建的包含topics与kafkaParams的Subscribe合并到变量message中，创建Kafka监听事件
+val messages = KafkaUtils.createDirectStream[String, String](
+ssc,
+PreferConsistent,
+Subscribe[String, String](topics, kafkaParams))
+// 把流数据按行提取后，将其分成词并计数，然后打印出来
+// Get the lines, split them into words, count the words and print
+// 定义变量lines：将messages后两个元素建立键值对关系
+val lines = messages.map(record => record.value)
+// 将输入的lines按照空格分割成多个词
+val words = lines.flatMap(_.split(" "))
+// 定义变量wordCounts：调用map-reduce方法并进行归约计算，从而得到词频的统计量
+val wordCounts = words.map(x => (x, 1L)).reduceByKey(_ + _)
+// 将wordCounts打印出来
+wordCounts.print()
+​
+// 启动ssc任务，开始统计单词
+ssc.start()
+// 等所有已提交的任务（包括正在跑的和队列中等待的）执行完或者等超时时间到或者线程被中断，抛出InterruptedException
+ssc.awaitTermination()
+
+# 开发过程
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.4.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.4.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.4.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.kafka</groupId>
+<artifactId>kafka_2.11</artifactId>
+<version>2.4.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.kafka</groupId>
+<artifactId>kafka-clients</artifactId>
+<version>2.4.0</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming-kafka-0-10_2.11</artifactId>
+<version>2.4.0</version>
+</dependency>
+</dependencies>
+package com
+​
+import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
+import org.apache.spark.streaming.kafka010._
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+​
+object StreamingKafkaDemo {
+def main(args: Array[String]): Unit = {
+​
+// 创建一个sparkconf并初始化，采用.setMaster("local[*]")方法指定maser的url为本地，
+// local[*]表示采用本机最大线程数计算（CPU的线程上限），local表示采用单线程计算，
+// local[3]表示采用3线程计算；采用.setAppName("DirectKafkaWordCount")方法将其命名为"DirectKafkaWordCount"
+// Create context with 2 second batch interval
+val sparkConf = new SparkConf().setMaster("local[2]").setAppName("DirectKafkaWordCount")
+// 创建一个心跳10ms的Streaming环境scc
+val ssc = new StreamingContext(sparkConf, Seconds(10))
+​
+// 配置Topic，名称为：cmcc
+val topics = Array("cmcc")
+​
+// 设置kafka参数
+val kafkaParams = Map[String, Object](
+// 将bootstrap.servers的IP指定为master:9092
+"bootstrap.servers" -> "master:9092",
+"key.deserializer" -> classOf[StringDeserializer], //序列化为StringDeserializer类的Key
+"value.deserializer" -> classOf[StringDeserializer], //序列化StringDeserializer类的Key
+"group.id" -> "use_a_separate_group_id_for_each_stream", // 设置kafka组名称
+"auto.offset.reset" -> "latest",
+"enable.auto.commit" -> (false: java.lang.Boolean)) // 关闭自动提交
+​
+// 创建一个带有代理和主题的直链Kafka流
+// Create direct kafka stream with brokers and topics
+// 将输入的ssc、Kafka的PreferConsistent方法以及创建的包含topics与kafkaParams的Subscribe合并到变量message中，创建Kafka直链流
+val messages = KafkaUtils.createDirectStream[String, String](
+ssc,
+PreferConsistent,
+Subscribe[String, String](topics, kafkaParams))
+​
+// 把流数据按行提取后，将其分成词并计数，然后打印出来
+// Get the lines, split them into words, count the words and print
+// 定义变量lines：将messages后两个元素建立键值对关系
+val lines = messages.map(record => record.value)
+// 将输入的lines按照空格分割成多个词
+val words = lines.flatMap(_.split(" "))
+// 定义变量wordCounts：调用map-reduce方法并进行归约计算，从而得到词频的统计量
+val wordCounts = words.map(x => (x, 1L)).reduceByKey(_ + _)
+// 将wordCounts打印出来
+wordCounts.print()
+​
+// 启动ssc任务，开始统计单词
+ssc.start()
+// 等所有已提交的任务（包括正在跑的和队列中等待的）执行完或者等超时时间到或者线程被中断，抛出InterruptedException
+ssc.awaitTermination()
+}
+}
+
+# 服务器端运行
+cd $HADOOP_HOME/
+sbin/start-all.sh
+cd /home/kafka/kafka_2.11-0.10.0.1
+nohup ./bin/zookeeper-server-start.sh config/zookeeper.properties &
+cd /home/kafka/kafka_2.11-0.10.0.1
+nohup ./bin/kafka-server-start.sh config/server.properties &
+cd /home/java/jdk1.8.0_40/bin/
+java -cp /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/SimulatorLog-1.0-SNAPSHOT.jar com.SimulatorLog
+cd /home/flume/apache-flume-1.6.0-cdh5.7.0-bin
+nohup bin/flume-ng agent --conf-file conf/flume-conf.properties -c conf/ --name agent -Dflume.root.logger=DEBUG,console &
+jps -l
+hadoop fs -ls /data/logs/
+/home/kafka/kafka_2.11-0.10.0.1/bin/kafka-console-consumer.sh --topic cmcc --from-beginning --bootstrap-server master:9092 --zookeeper master:2181
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+nohup bin/spark-submit \
+--master local[2] \
+--class com.StreamingKafkaDemo \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkFlumeKafkaDemo-1.0-SNAPSHOT.jar \ &
+vi nohup.out

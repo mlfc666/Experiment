@@ -1,0 +1,222 @@
+
+# 实验过程
+<dependencies>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-core_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-streaming_2.11</artifactId>
+<version>2.3.3</version>
+<scope>provided</scope>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-sql_2.11</artifactId>
+<version>2.3.3</version>
+</dependency>
+<dependency>
+<groupId>org.apache.spark</groupId>
+<artifactId>spark-mllib_2.11</artifactId>
+<version>2.3.3</version>
+<scope>compile</scope>
+</dependency>
+<dependency>
+<groupId>com.huaban</groupId>
+<artifactId>jieba-analysis</artifactId>
+<version>1.0.2</version>
+</dependency>
+<dependency>
+<groupId>com.alibaba</groupId>
+<artifactId>fastjson</artifactId>
+<version>1.2.34</version>
+</dependency>
+</dependencies>
+
+# 数据归一化
+package com
+​
+import org.apache.spark.ml.feature.Normalizer
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.linalg.Vector
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{DataFrame, SparkSession}
+​
+class FootballNormalization{}
+​
+object FootballNormalization {
+//接受数据进行归一化处理
+def parseData(ds:RDD[String],sparkSession: SparkSession):DataFrame ={
+val data = ds.map { line =>
+val array=line.split(",")
+val id=array(0)
+(id,Vectors.dense(array.drop(1).map(_.toDouble)))
+}
+//将数据以dataframe格式处理
+val dataFrame = sparkSession.createDataFrame(data).toDF("id", "features")
+//创建归一化对象，设置归一化对象的输入为特征，输出归一化化特征，以及归一范围
+val normalizer = new Normalizer()
+.setInputCol("features")
+.setOutputCol("normFeatures")
+.setP(1.0)
+//对数据进行归一化处理
+val l1NormData = normalizer.transform(dataFrame)
+println("Normalized using L^1 norm")
+l1NormData
+}
+}
+
+# 完成聚类分析
+package com
+​
+import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
+import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.rdd.RDD
+​
+class FootballCluster{}
+​
+object FootballCluster {
+def wcss(parsedData:RDD[Vector])={
+/*划分训练集和测试集80/20*/
+val scaled_data = parsedData.randomSplit(Array(0.8, 0.2), 12L)
+val data_train = scaled_data(0)
+val data_test = scaled_data(1)
+/*
+* 分别修改聚类的个数和迭代的次数，进行参数优化，得到最佳的结果
+* 应用交叉验证来选择模型最优的类中心数目。这和监督学习的过程一样，需要将数据集
+* 分割为训练集和测试集，然后在训练集上训练模型，在测试集上评估感兴趣的指标的性能。
+* 用80/20划分得到训练集和测试集，并使用MLlib内置的WCSS进行评估
+* */
+val newsCosts = Seq(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15).map {
+param =>
+(param, KMeans.train(data_train, param, 50).computeCost(data_test))
+}
+println("sina-news clustering cross-validation:")
+newsCosts.foreach {
+case (k, cost) =>
+println(f"WCSS for K=$k id $cost%2.2f")
+}
+}
+​
+def trainModel(parsedData:RDD[Vector],k:Int,maxIterations:Int):KMeansModel={
+/*划分训练集和测试集80/20*/
+val scaled_data = parsedData.randomSplit(Array(0.8, 0.2), 12L)
+val data_train = parsedData //scaled_data(0)
+val data_test = scaled_data(1)
+val initializationMode = ""
+//训练KMeans模型
+val kmeansModel = KMeans.train(data_train, k, maxIterations)
+//聚类中心
+val clusterCenters = kmeansModel.clusterCenters
+clusterCenters.foreach(u=>println(u))
+kmeansModel
+}
+}
+
+# 读取数据和归一化并聚类
+//初始化Spark上下文
+//local: 所有计算都运行在一个线程当中，没有任何并行计算，通常我们在本机执行一些测试代码，或者练手，就用这种模式。
+//local[K]: 指定使用几个线程来运行计算，比如local[3]就是运行3个worker线程。通常我们的cpu有几个core，就指定几个线程，最大化利用cpu的计算能力
+//local[*]: 这种模式直接帮你按照cpu最多cores来设置线程数了。
+val conf = new SparkConf().setMaster("local[3]").setAppName("football cluster")
+val sparkSession = SparkSession.builder().master("local[3]")
+.appName("football cluster")
+.config(conf)
+.getOrCreate()
+//读取文件，此读取文件的格式为服务器读取的方法
+/ var ds = sparkSession.sparkContext.textFile(args(0), 1)
+//此读取文件的格式为读取本地数据的方法
+//var ds = sparkSession.sparkContext.textFile("file:///E:\tmp\spark\data\data.csv", 1)
+//读取文件的表头，并去除
+val header = ds.first()
+ds = ds.filter(row => row != header)
+//对数据进行归一化处理
+val l1NormData=FootballNormalization.parseData(ds,sparkSession)
+l1NormData.cache()
+//此方法为FootballCluster类下的方法
+FootballCluster.wcss(data1)
+//调用训练模型的方法trainModel是FootballCluster类下的方法，后面介绍
+val kmeansModel=FootballCluster.trainModel(data1,args(1).toInt,args(2).toInt)
+result.collect().foreach(println(_))
+result.saveAsTextFile(args(3))
+package com
+​
+import org.apache.spark.ml.feature.Normalizer
+import org.apache.spark.ml.linalg.Vector
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.mllib.linalg.Vectors.fromML
+import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.{SparkConf, SparkContext}
+​
+// 任何Spark程序都是SparkContext开始的，SparkContext的初始化需要一个SparkConf对象，SparkConf包含了Spark集群配置的各种参数。
+//初始化后，就可以使用SparkContext对象所包含的各种方法来创建和操作RDD和共享变量。
+object Driver {
+def main(args: Array[String]): Unit = {
+//初始化Spark上下文
+//local: 所有计算都运行在一个线程当中，没有任何并行计算，通常我们在本机执行一些测试代码，或者练手，就用这种模式。
+//local[K]: 指定使用几个线程来运行计算，比如local[3]就是运行3个worker线程。通常我们的cpu有几个core，就指定几个线程，最大化利用cpu的计算能力
+//local[*]: 这种模式直接帮你按照cpu最多cores来设置线程数了。
+val conf = new SparkConf().setMaster("local[3]").setAppName("football cluster")
+val sparkSession = SparkSession.builder().master("local[3]")
+.appName("football cluster")
+.config(conf)
+.getOrCreate()
+//读取文件
+var ds = sparkSession.sparkContext.textFile(args(0), 1)
+// var ds = sparkSession.sparkContext.textFile("file:///E:\tmp\spark\data\data.csv", 1)
+//读取文件的表头，并去除
+val header = ds.first()
+ds = ds.filter(row => row != header)
+//对数据进行归一化处理
+val l1NormData=FootballNormalization.parseData(ds,sparkSession)
+l1NormData.cache()
+//normFeatures:进行L1归一化
+//features:没有进行归一化
+val data1=l1NormData.rdd.map{r=>
+fromML(
+r.getAs[Vector]("features").toDense)
+}
+//执行WCSS，选择最佳K值
+FootballCluster.wcss(data1)
+//调用训练模型，传入数据，将聚类个数设置为3，迭代50次
+val kmeansModel=FootballCluster.trainModel(data1,args(1).toInt,args(2).toInt)
+//normFeatures：进行L1归一化；features：没有进行归一化
+val data2=l1NormData.rdd.map{r=>
+(r.getAs[String]("id"),fromML(
+r.getAs[Vector]("features").toDense))
+}
+//使用聚类模型测试模型效果，并保存结果，lable即聚类标签
+val result = data2.map { line =>
+val id=line._1
+val lable=kmeansModel.predict(line._2)
+(lable,id)
+}.reduceByKey((v1,v2)=>v1+","+v2)
+//打印聚类结果。保存到文件中
+result.collect().foreach(println(_))
+//服务器输出格式
+result.saveAsTextFile(args(3))
+//本地输出格式
+// result.saveAsTextFile("file:///E:\tmp\spark\results")
+}
+}
+
+# 实验环境准备
+cd $HADOOP_HOME/
+sbin/start-all.sh
+
+# 对程序进行工程打包与jar包上传
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/mllib
+hdfs dfs -put data.csv hdfs://master:8020/
+
+# 在服务器执行以下命令运行程序
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/bin/spark-submit \
+--master local[2] \
+--class com.Driver \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/sparkFootballKmeansDemo-1.0-SNAPSHOT.jar \
+hdfs://master:8020/data.csv \
+3 50 \
+hdfs://master:8020/result
+hdfs dfs -ls /result
+hdfs dfs -cat /result/part-00000

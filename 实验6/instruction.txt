@@ -1,0 +1,41 @@
+
+# 准备工作
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+bin/spark-shell
+
+# StreamingContext 对象
+import org.apache.spark._
+import org.apache.spark.streaming._
+​
+// 创建StreamingContext对象，第二个参数为处理的时间片时间间隔，设置为10分钟
+val ssc = new StreamingContext(sc, Seconds(600))
+
+# DStream 对象
+// 创建一个基于socket接受数据的DStream
+val lines = ssc.socketTextStream("localhost", 9999)
+
+# DStream 操作
+val words = lines.flatMap(_.toLowerCase().split("\W+"))
+val pairs = words.filter(_.nonEmpty).map(word => (word, 1))
+val wordCount = pairs.reduceByKey(_ + _)
+
+# Spark Streaming 程序的启动
+//将处理结果保存到/tmp/sparkstreaming_wordcount"
+wordCount.saveAsTextFiles("/tmp/sparkstreaming_wordcount")
+
+# 打开 TCP Socket 连接
+nc -l -p 9999
+I love hadoop
+I Love HDFS
+i love MapReduce
+I LovE YARN
+I Love Spark
+I Love Hive
+// 启动Spark Streaming应用
+ssc.start()
+cd /tmp/
+ls
+cd sparkstreaming_wordcount-1586309400000
+ls -al
+cat part-00000
+cat part-00009

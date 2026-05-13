@@ -1,0 +1,8 @@
+cd /home/spark-2.4.0-bin-2.6.0-cdh5.7.0
+
+bin/spark-submit \
+--master local[*] \
+--class com.PageRankExample \
+/home/spark-2.4.0-bin-2.6.0-cdh5.7.0/PageRankExample-1.0-SNAPSHOT.jar \
+file:///home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/graphx/followers.txt \
+file:///home/spark-2.4.0-bin-2.6.0-cdh5.7.0/data/graphx/users.txt
