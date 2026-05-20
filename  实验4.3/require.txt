@@ -1,0 +1,14 @@
+实验4.3 Logistic Regression
+利用理论课所学知识，实现逻辑回归logistic Regression，对libSVM格式数据进行分类。
+要求：
+使用spark自带的libSVM数据，在其安装目录下的data/mllib/sample_libsvm_data.txt可以找到，如：spark-2.4.0/data/mllib/sample_libsvm_data.txt
+切分数据集，训练集（80%），测试集（20%）；
+使用LogisticRegressionWithLBFGS进行训练，分成10类；
+计算测试集上分类的准确率accuracy；
+尝试如何提升测试效果；
+提交实验报告（提供运行过程截图、结果分析和源码）。
+
+如何加载libSVM数据：
+// 加载训练数据
+val data = MLUtils.loadLibSVMFile(sc, "data/mllib/sample_libsvm_data.txt")
+
